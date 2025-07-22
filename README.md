@@ -63,6 +63,10 @@ Our **supporter-exclusive packages** unlock the full **Fibonaix** experience wit
 They can be accessed via our website:  
 👉 [fibonaix.netlify.app](https://fibonaix.netlify.app)
 
+🎉 To celebrate our launch, use these gift codes on Buy Me a Coffee:
+- For Explorer: LAUNCHEX
+- For Strategist: LAUNCHST
+
 
 ---
 
