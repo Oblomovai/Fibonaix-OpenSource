@@ -1,0 +1,349 @@
+{
+  "name": "Fibonaix açk kaynak",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        820,
+        -20
+      ],
+      "id": "ea253cc4-a362-4f93-8aee-185c22cd51ad",
+      "name": "Telegram Trigger",
+      "webhookId": "e4ee7f98-4287-432b-a9f8-ad83a504ba6e",
+      "credentials": {
+        "telegramApi": {
+          "id": "6ryrDLNHyipQ9cHB",
+          "name": "Telegram account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Telegram Trigger node'undan gelen mesajı al\nconst messageText = $('Telegram Trigger').item.json.message.text;\n\nif (!messageText || typeof messageText !== 'string') {\n  throw new Error('Gelen mesaj undefined veya string değil. Gelen mesaj: ' + JSON.stringify(messageText));\n}\n\n// Mesajı boşluklara göre böl ve boşlukları temizle\nconst parts = messageText.trim().split(/\\s+/); // Birden fazla boşluğu destekler\n\n// Parite ve zaman dilimini çıkarmak için esnek bir yaklaşım\nlet parite = '';\nlet zamanDilimi = '';\n\nif (parts.length < 2 || parts.length > 3) {\n  throw new Error('Mesaj formatı yanlış. Beklenen format: \"BTCUSDT 4h\" veya \"BTC USDT 4h\". Gelen mesaj: ' + messageText);\n}\n\n// Pariteyi oluştur\nif (parts.length === 2) {\n  // \"BTCUSDT 4h\" formatı\n  parite = parts[0].toUpperCase();\n  zamanDilimi = parts[1].toLowerCase();\n} else if (parts.length === 3) {\n  // \"BTC USDT 4h\" formatı\n  parite = (parts[0] + parts[1]).toUpperCase(); // \"BTC\" + \"USDT\" = \"BTCUSDT\"\n  zamanDilimi = parts[2].toLowerCase();\n}\n\n// Binance API için geçerli zaman dilimlerini kontrol et\nconst validIntervals = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M'];\nif (!validIntervals.includes(zamanDilimi)) {\n  throw new Error(`Geçersiz zaman dilimi: ${zamanDilimi}. Geçerli zaman dilimleri: ${validIntervals.join(', ')}`);\n}\n\n// Pariteyi kontrol et (basit bir doğrulama)\nif (!parite.match(/^[A-Z0-9]+$/)) {\n  throw new Error(`Geçersiz parite: ${parite}. Parite sadece büyük harf ve rakamlardan oluşmalı (örneğin, BTCUSDT).`);\n}\n\n// Yapılandırılmış veriyi döndür\nreturn [\n  {\n    json: {\n      symbol: parite, // \"BTCUSDT\"\n      interval: zamanDilimi // \"4h\"\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        -200
+      ],
+      "id": "2fab106a-37ba-4237-a984-ce6b89b1d9a4",
+      "name": "Parse Message"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gelen tüm öğeleri al\nconst items = $input.all();\n\n// Verinin geldiğinden emin olalım\nif (!items || items.length === 0) {\n    return [{\n        json: {\n            error: \"Hiçbir öğe bulunamadı\"\n        }\n    }];\n}\n\n// klineData alanlarını al ve parse et\nconst klines = items.map(item => {\n    const klineData = item.json.klineData;\n    if (typeof klineData === \"string\") {\n        try {\n            return JSON.parse(klineData);\n        } catch (e) {\n            console.error(\"JSON parse error:\", e, \"Data:\", klineData);\n            return null;\n        }\n    }\n    if (typeof klineData === 'object' && klineData !== null) {\n       return klineData;\n    }\n    console.error(\"Invalid klineData format:\", klineData);\n    return null;\n}).filter(kline => kline !== null && kline !== undefined);\n\n\n// Klines verilerini işle\nlet currentPrice = 0;\nlet swingHigh = 0;\nlet swingLow = 0;\nlet trend = \"Nötr\";\nlet rsiStatus = \"Bilinmiyor\";\nlet rsiValue = 0;\nlet macdStatus = \"Bilinmiyor\";\nlet supportLevels = [\"Veri Yok\"];\nlet resistanceLevels = [\"Veri Yok\"];\nlet validKlines = [];\nlet fibRetracement = {};\nlet fvg_detected = false;\n\nif (klines.length > 0) {\n    validKlines = klines.filter(kline =>\n        kline &&\n        typeof kline.open === 'number' && typeof kline.high === 'number' &&\n        typeof kline.low === 'number' && typeof kline.close === 'number' &&\n        kline.close !== 0\n    );\n\n    if (validKlines.length > 0) {\n        currentPrice = validKlines[validKlines.length - 1]?.close || 0;\n        const highs = validKlines.map(kline => kline.high);\n        const lows = validKlines.map(kline => kline.low);\n        swingHigh = highs.length > 0 ? Math.max(...highs) : 0;\n        swingLow = lows.length > 0 ? Math.min(...lows) : 0;\n\n        // --- Trend Hesaplama ---\n        if (validKlines.length >= 5) {\n            const lastFiveCloses = validKlines.slice(-5).map(kline => kline.close);\n            const isRising = lastFiveCloses.every((close, idx) => idx === 0 || close >= lastFiveCloses[idx - 1]);\n            const isFalling = lastFiveCloses.every((close, idx) => idx === 0 || close <= lastFiveCloses[idx - 1]);\n            if (isRising) { trend = \"Yükseliş\"; }\n            else if (isFalling) { trend = \"Düşüş\"; }\n        }\n\n        // --- Fibonacci Hesaplama (Sadece Geri Çekilme) ---\n        if (swingHigh > 0 && swingLow > 0 && swingHigh > swingLow) {\n            const diff = swingHigh - swingLow;\n            fibRetracement = {\n                fibRetracement_0_382: swingHigh - (diff * 0.382),\n                fibRetracement_0_50: swingHigh - (diff * 0.5),\n                fibRetracement_0_618: swingHigh - (diff * 0.618)\n            };\n        }\n        // Fibonacci Extension kısmı tamamen kaldırıldı.\n\n        // --- İndikatör Hesaplamaları (Sadece RSI ve MACD) ---\n         if (validKlines.length >= 15) { /* RSI */\n            const closes = validKlines.map(k => k.close); let gains = [], losses = [];\n            for (let i = 1; i < closes.length; i++) { const change = closes[i] - closes[i - 1]; gains.push(change > 0 ? change : 0); losses.push(change < 0 ? -change : 0); }\n            const avgGain = gains.slice(-14).reduce((sum, val) => sum + val, 0) / 14; const avgLoss = losses.slice(-14).reduce((sum, val) => sum + val, 0) / 14;\n            if (avgLoss === 0) { rsiValue = 100; } else { const rs = avgGain / avgLoss; rsiValue = 100 - (100 / (1 + rs)); }\n            rsiStatus = rsiValue > 70 ? \"Overbought\" : rsiValue < 30 ? \"Oversold\" : \"Nötr\";\n         }\n         if (validKlines.length >= 26) { /* MACD */\n             const closes = validKlines.map(k => k.close);\n             const calculateSMA = (data, period) => data.length >= period ? data.slice(-period).reduce((sum, val) => sum + val, 0) / period : null;\n             const ema12 = calculateSMA(closes, 12); const ema26 = calculateSMA(closes, 26);\n             if (ema12 !== null && ema26 !== null) { macdStatus = ema12 > ema26 ? \"Bullish\" : \"Bearish\"; }\n         }\n        // Stochastic kısmı tamamen kaldırıldı.\n\n        // --- Destek/Direnç Seviyeleri (SADECE 1 TANE) ---\n        if (swingHigh > 0 && swingLow > 0) {\n            supportLevels = [swingLow].filter(l => l && l > 0 && l < currentPrice).slice(0, 1);\n            resistanceLevels = [swingHigh].filter(l => l > 0 && l > currentPrice).slice(0, 1);\n        }\n        while (supportLevels.length < 1) supportLevels.push(\"Veri Yok\");\n        while (resistanceLevels.length < 1) resistanceLevels.push(\"Veri Yok\");\n\n        // --- FVG Hesaplama (SADECE TESPİT) ---\n        if (validKlines.length >= 3) {\n            const kline1 = validKlines[validKlines.length - 3];\n            const kline3 = validKlines[validKlines.length - 1];\n            if (kline1 && kline3 && (kline1.high < kline3.low || kline1.low > kline3.high)) {\n                fvg_detected = true;\n            }\n        }\n    }\n}\n\n// Sonuçları döndür (AZALTILMIŞ)\nconst formatLevel = (level) => level && typeof level === 'number' ? Number(level.toFixed(4)) : \"Veri Yok\";\n\nreturn [{\n    json: {\n        currentPrice: Number(currentPrice.toFixed(4)),\n        trend,\n        rsiStatus,\n        rsiValue: Number(rsiValue.toFixed(2)),\n        macdStatus,\n        supportLevel1: formatLevel(supportLevels[0]),\n        resistanceLevel1: formatLevel(resistanceLevels[0]),\n        fibRetracement_0_382: fibRetracement.fibRetracement_0_382 ? Number(fibRetracement.fibRetracement_0_382.toFixed(4)) : \"Hesaplanamadı\",\n        fibRetracement_0_500: fibRetracement.fibRetracement_0_50 ? Number(fibRetracement.fibRetracement_0_50.toFixed(4)) : \"Hesaplanamadı\",\n        fibRetracement_0_618: fibRetracement.fibRetracement_0_618 ? Number(fibRetracement.fibRetracement_0_618.toFixed(4)) : \"Hesaplanamadı\",\n        fvg_detected // Sadece true/false olarak dönecek\n    }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        -200
+      ],
+      "id": "999616fd-5c61-4683-ac9a-ceac9c24de8f",
+      "name": "Preprocess Klines Data"
+    },
+    {
+      "parameters": {
+        "url": "https://fapi.binance.com/fapi/v1/klines",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "symbol",
+              "value": "={{ $('Parse Message').item.json.symbol }}"
+            },
+            {
+              "name": "interval",
+              "value": "={{ $('Parse Message').item.json.interval }}"
+            },
+            {
+              "name": "startTime",
+              "value": "={{ Date.now() - 1000 * 60 * 60 * 24 * 30 }}"
+            },
+            {
+              "name": "endTime",
+              "value": "={{ Date.now() }}"
+            },
+            {
+              "name": "limit",
+              "value": "1000"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        -200
+      ],
+      "id": "18735cb9-d76e-40f6-a394-e9c10c54e2af",
+      "name": "Fetch Klines from Binance",
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "XudbsSH41PRQSrkR",
+          "name": "binapi"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gelen tüm öğeleri al\nconst items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n  // Doğrudan item.json bir dizi olduğu için rawKlines olarak al\n  const rawKlines = Array.isArray(item.json) ? item.json : [];\n  if (rawKlines.length === 0) {\n    continue; // Geçersiz veriyi atla\n  }\n\n  // Klines verisini işle\n  const klineData = {\n    timestamp: parseInt(rawKlines[0]), // Açılış zamanı\n    open: parseFloat(rawKlines[1]),   // Açılış fiyatı\n    high: parseFloat(rawKlines[2]),   // En yüksek fiyat\n    low: parseFloat(rawKlines[3]),    // En düşük fiyat\n    close: parseFloat(rawKlines[4]),  // Kapanış fiyatı\n    volume: parseFloat(rawKlines[5])  // Hacim\n  };\n\n  results.push({\n    json: {\n      klineData\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1580,
+        -200
+      ],
+      "id": "27982612-778a-45b1-a927-c551b0f90037",
+      "name": "Code1",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const messageText = $json.message.text;\nconst isStartCommand = messageText === \"/start\";\nreturn [{ json: { isStartCommand, message: messageText } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        820,
+        -200
+      ],
+      "id": "43d8fe93-6032-4d44-b229-5f0b2e024590",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.0-flash",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        1620,
+        0
+      ],
+      "id": "21c35eca-3b98-4aba-8c37-115403cbecc8",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "zgrllsUX5ULFNn3b",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $node[\"Telegram Trigger\"].json.message.chat.id }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML"
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1800,
+        -20
+      ],
+      "id": "59085b98-9932-402f-bdf4-29efad5315ec",
+      "name": "Telegram: Send First Message",
+      "webhookId": "eada34e3-04ea-4b35-950e-0dd817a2735c",
+      "credentials": {
+        "telegramApi": {
+          "id": "6ryrDLNHyipQ9cHB",
+          "name": "Telegram account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Gelen tüm öğeleri al\nconst items = $input.all();\n\n// Girdinin geçerli olup olmadığını ve 2 öğe içerdiğini kontrol et\nif (!items || items.length !== 2 || !items[0].json || !items[1].json) {\n    throw new Error(\"Prepare Variables: Gerekli girdi verileri (2 adet) alınamadı veya bozuk.\");\n}\n\n// items[0] -> Parse Message'dan gelen veri\n// items[1] -> Preprocess Klines Data'dan gelen veri\nconst parseMessageData = items[0].json;\nconst preprocessData = items[1].json;\n\n\n// --- NİHAİ VE TAM ÇIKTI OBJESİ ---\nconst resolvedData = {\n  // ParseMessage'dan gelenler\n  symbol: parseMessageData.symbol,\n  interval: parseMessageData.interval,\n\n  // Preprocess'ten gelenler\n  currentPrice: preprocessData.currentPrice,\n  trend: preprocessData.trend,\n  rsiStatus: preprocessData.rsiStatus,\n  rsiValue: preprocessData.rsiValue,\n  macdStatus: preprocessData.macdStatus,\n  supportLevel1: preprocessData.supportLevel1,\n  resistanceLevel1: preprocessData.resistanceLevel1,\n  \n  // FIBONACCI SEVİYELERİNİ DOĞRUDAN GİRDİDEKİ İSİMLERLE ALIYORUZ\n  fibRetracement_0_382: preprocessData.fibRetracement_0_382,\n  fibRetracement_0_500: preprocessData.fibRetracement_0_500,\n  fibRetracement_0_618: preprocessData.fibRetracement_0_618,\n  \n  fvg_detected: preprocessData.fvg_detected\n};\n\n\n// Birleştirilmiş ve TAM veriyi döndür\nreturn [{\n  json: resolvedData\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -20
+      ],
+      "id": "e3e1df20-8e26-4191-84a9-39dffc74c3fb",
+      "name": "Prepare Variables"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [
+        1040,
+        -20
+      ],
+      "id": "af00b03d-73a9-41e6-9c92-a89ef60afe68",
+      "name": "bridge"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Lütfen aşağıdaki teknik verilere dayanarak, Sistem Mesajındaki talimatlara uygun, kısa bir piyasa özeti yaz:\n\n{{ JSON.stringify($json, null, 2) }}",
+        "options": {
+          "systemMessage": "=# Rol ve Uzmanlık\nSen, 'Fibonaix' adında, temel teknik verileri yorumlayan, deneyimli bir piyasa analizi asistanısın. Görevin, sana verilen JSON verilerini, akıcı, anlaşılır ve 2-3 cümlelik kısa bir paragrafa dönüştürmektir.\n\n\n# Yorumlama Kuralları\n*   Sadece sana verilen verileri kullan.\n*   Yorum yaparken, veriler arasındaki ilişkiye dikkat çek.\n*   Fiyatın, en yakın destek, direnç ve **özellikle de kritik Fibonacci seviyelerine (0.500 - 0.618 gibi) göre konumunu vurgula.**\n*   Analizin, bir başlangıç, gelişme ve sonuç içermeli ve **yaklaşık 3-4 cümle uzunluğunda** olmalıdır.\n*   Kesinlikle yatırım tavsiyesi, alım/satım sinyali veya fiyat hedefi verme."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.8,
+      "position": [
+        1420,
+        -20
+      ],
+      "id": "dd88f50d-f2b7-4a95-b0a2-07cace1a1397",
+      "name": "Fibonaix - Open Source"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Message": {
+      "main": [
+        [
+          {
+            "node": "Fetch Klines from Binance",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "bridge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preprocess Klines Data": {
+      "main": [
+        [
+          {
+            "node": "bridge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Fetch Klines from Binance": {
+      "main": [
+        [
+          {
+            "node": "Code1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code1": {
+      "main": [
+        [
+          {
+            "node": "Preprocess Klines Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Parse Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Fibonaix - Open Source",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Variables": {
+      "main": [
+        [
+          {
+            "node": "Fibonaix - Open Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "bridge": {
+      "main": [
+        [
+          {
+            "node": "Prepare Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Send First Message": {
+      "main": [
+        []
+      ]
+    },
+    "Fibonaix - Open Source": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Send First Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "691418a0-c2a4-4c0f-8f02-987121a460c9",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b09aedc7da115bf18c83df4ce6278d4269b2f6f14a09ed2b645edb9f7a9a0494"
+  },
+  "id": "DYzoFJjS4IpVGZUX",
+  "tags": []
+}
