@@ -1,10 +1,10 @@
-# Fibonaix: Open-Source n8n Workflows
+# Fibonaix: Source-Available n8n Workflows
 
 [![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 [![Website](https://img.shields.io/badge/Website-fibonaix.netlify.app-blue.svg)](https://fibonaix.netlify.app)
 [![Support Us](https://img.shields.io/badge/Support-Buy%20Me%20A%20Coffee-orange.svg)](https://www.buymeacoffee.com/Oblomo_v)
 
-Welcome to the open-source repository for **Fibonaix**, a project dedicated to creating powerful, no-code technical analysis assistants using **n8n** and **AI**.
+Welcome to the source-available repository for **Fibonaix**, a project dedicated to creating powerful, no-code technical analysis assistants using **n8n** and **AI**.
 
 This repository contains foundational workflows designed to help you get started with automating your market analysis using flexible, human-readable components.
 
